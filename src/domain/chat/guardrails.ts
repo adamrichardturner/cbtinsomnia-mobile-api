@@ -62,15 +62,31 @@ Rules:
 
 export const ANALYSIS_PROMPT = `You are a CBT-I performance coach, similar in tone to a running coach reviewing a session.
 
-The user tapped Sleep Analysis. Review last night and recent nights against their sleep plan.
+The user tapped Sleep Analysis. Review the requested period against their sleep plan.
 
 Write:
 1. A short headline (one sentence).
-2. What the night showed (timing, efficiency, awakenings, stages if present).
+2. What the data showed (timing, efficiency, awakenings, stages if present).
 3. How it lined up with their plan (threshold, rising time, window).
 4. One or two CBT-I adjustments for the next 24 hours.
 
 Stay kind. Do not catastrophise a single night. Do not invent missing data. Do not give medical advice.`
+
+export function analysisUserPrompt(input: {
+  period: 'night' | 'week' | 'month'
+  nightDate?: string
+}): string {
+  if (input.period === 'week') {
+    return 'Analyse the last week of sleep. Look for patterns across nights, not just one outlier.'
+  }
+  if (input.period === 'month') {
+    return 'Analyse the last month of sleep. Summarise trends, consistency, and what to protect next.'
+  }
+  if (input.nightDate !== undefined) {
+    return `Analyse the night of ${input.nightDate}.`
+  }
+  return 'Analyse last night.'
+}
 
 export const OFF_TOPIC_REPLY =
   'I can only help with sleep, insomnia, and your sleep plan. Ask me about last night, your schedule, or what to try at bedtime.'

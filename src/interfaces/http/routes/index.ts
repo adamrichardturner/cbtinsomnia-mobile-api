@@ -162,7 +162,8 @@ export function createRouter(deps: {
 
   router.get('/v1/sleep/summary', requireAuth, async (req, res, next) => {
     try {
-      res.json(await deps.sleep.summary(userId(req)))
+      const days = z.coerce.number().int().min(1).max(90).optional().parse(req.query.days)
+      res.json(await deps.sleep.summary(userId(req), days ?? 30))
     } catch (error) {
       next(error)
     }
@@ -309,7 +310,16 @@ export function createRouter(deps: {
 
   router.post('/v1/analysis', requireAuth, async (req, res, next) => {
     try {
-      res.json(await deps.coach.analyseLastNight(userId(req)))
+      const body = z
+        .object({
+          period: z.enum(['night', 'week', 'month']).default('night'),
+          nightDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+        })
+        .parse(req.body ?? {})
+      res.json(await deps.coach.analyse(userId(req), body))
     } catch (error) {
       next(error)
     }

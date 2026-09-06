@@ -203,7 +203,10 @@ export class SleepService {
     return saved
   }
 
-  async summary(userId: string): Promise<{
+  async summary(
+    userId: string,
+    days = 28,
+  ): Promise<{
     nights: SleepNightRecord[]
     lastNight: SleepNightRecord | null
     averages: {
@@ -219,11 +222,12 @@ export class SleepService {
       nightsCounted: number
     }
   }> {
-    const nights = await this.listNights(userId, 28)
-    const recent = nights.slice(0, 7)
-    const previous = nights.slice(7, 14)
+    const windowDays = Math.min(Math.max(days, 1), 90)
+    const nights = await this.listNights(userId, Math.max(windowDays * 2, 31))
+    const recent = nights.slice(0, windowDays)
+    const previous = nights.slice(windowDays, windowDays * 2)
     return {
-      nights,
+      nights: recent,
       lastNight: nights[0] ?? null,
       averages: this.averageMetrics(recent),
       previousAverages: {

@@ -3,6 +3,7 @@ import type { Knex } from 'knex'
 import type OpenAI from 'openai'
 import {
   ANALYSIS_PROMPT,
+  analysisUserPrompt,
   isClearlyOffTopic,
   OFF_TOPIC_REPLY,
   SYSTEM_PROMPT,
@@ -12,12 +13,22 @@ import { notFound } from '../../shared/errors.js'
 import type { PlanService } from './plan.service.js'
 import type { SleepService } from './sleep.service.js'
 
+export type AnalysisPeriod = 'night' | 'week' | 'month'
+
 export interface ChatMessageRecord {
   id: string
   threadId: string
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+}
+
+export interface SleepAnalysisResult {
+  id: string
+  nightDate: string
+  headline: string
+  body: string
+  period: AnalysisPeriod
 }
 
 export class CoachService {
@@ -89,32 +100,46 @@ export class CoachService {
     return this.listMessages(userId, threadId)
   }
 
-  async analyseLastNight(
+  async analyseLastNight(userId: string): Promise<SleepAnalysisResult> {
+    return this.analyse(userId, { period: 'night' })
+  }
+
+  async analyse(
     userId: string,
-  ): Promise<{ id: string; nightDate: string; headline: string; body: string }> {
-    const summary = await this.sleep.summary(userId)
-    const last = summary.lastNight
-    if (last === null) {
+    input: { period: AnalysisPeriod; nightDate?: string },
+  ): Promise<SleepAnalysisResult> {
+    const limit = input.period === 'month' ? 31 : input.period === 'week' ? 7 : 42
+    const nights = await this.sleep.listNights(userId, limit)
+    if (nights.length === 0) {
       throw notFound('No sleep recorded yet. Sync Health or write a diary first.')
     }
-    const context = await this.buildContext(userId)
+
+    const target =
+      input.period === 'night' && input.nightDate !== undefined
+        ? nights.find((night) => night.nightDate === input.nightDate)
+        : nights[0]
+    if (target === undefined) {
+      throw notFound('No sleep recorded for that night yet.')
+    }
+
+    const contextNights = input.period === 'night' ? nights.slice(0, 7) : nights
+    const context = await this.buildContext(userId, contextNights)
     const body = await completeChat(this.openai, this.model, `${ANALYSIS_PROMPT}\n\n${context}`, [
       {
         role: 'user',
-        content: `Analyse the night of ${last.nightDate}.`,
+        content: analysisUserPrompt(input),
       },
     ])
-    const headline =
-      body.split('\n').find((line) => line.trim().length > 0) ?? 'Last night in context'
+    const headline = body.split('\n').find((line) => line.trim().length > 0) ?? 'Sleep in context'
     const id = uuid()
     await this.db('sleep_analyses').insert({
       id,
       user_id: userId,
-      night_date: last.nightDate,
+      night_date: target.nightDate,
       headline: headline.replace(/^#+\s*/, '').slice(0, 180),
       body,
     })
-    return { id, nightDate: last.nightDate, headline, body }
+    return { id, nightDate: target.nightDate, headline, body, period: input.period }
   }
 
   async latestAnalysis(userId: string): Promise<{
@@ -157,25 +182,32 @@ export class CoachService {
     }
   }
 
-  private async buildContext(userId: string): Promise<string> {
-    const summary = await this.sleep.summary(userId)
+  private async buildContext(
+    userId: string,
+    nightsOverride?: Awaited<ReturnType<SleepService['listNights']>>,
+  ): Promise<string> {
+    const nights = nightsOverride ?? (await this.sleep.listNights(userId, 14))
     const alignment = await this.plans.alignment(userId)
-    const last = summary.lastNight
     const plan = alignment.plan
+    const averages = this.sleepAverages(nights)
     const lines = [
       'User sleep context (facts only):',
-      `Recent nights counted: ${summary.averages.nightsCounted}`,
-      `Average total sleep (mins): ${summary.averages.totalSleepMins}`,
-      `Average sleep efficiency: ${summary.averages.sleepEfficiencyPct}`,
-      `Average SOL (mins): ${summary.averages.sleepOnsetLatencyMins}`,
+      `Nights in this review: ${nights.length}`,
+      `Average total sleep (mins): ${averages.totalSleepMins}`,
+      `Average sleep efficiency: ${averages.sleepEfficiencyPct}`,
+      `Average SOL (mins): ${averages.sleepOnsetLatencyMins}`,
     ]
-    if (last !== null) {
+    const preview = nights.slice(0, 14)
+    for (const night of preview) {
       lines.push(
-        `Last night ${last.nightDate}: TST ${last.metrics.totalSleepMins}, TIB ${last.metrics.timeInBedMins}, SE ${last.metrics.sleepEfficiencyPct}, SOL ${last.metrics.sleepOnsetLatencyMins}, WASO ${last.metrics.wasoMins}, source ${last.source}`,
+        `Night ${night.nightDate}: TST ${night.metrics.totalSleepMins}, TIB ${night.metrics.timeInBedMins}, SE ${night.metrics.sleepEfficiencyPct}, SOL ${night.metrics.sleepOnsetLatencyMins}, WASO ${night.metrics.wasoMins}, source ${night.source}`,
       )
-      if (last.notes !== null) {
-        lines.push(`Diary note: ${last.notes.slice(0, 500)}`)
+      if (night.notes !== null) {
+        lines.push(`Diary note ${night.nightDate}: ${night.notes.slice(0, 280)}`)
       }
+    }
+    if (nights.length === 0) {
+      lines.push('No nights recorded.')
     }
     if (plan !== null) {
       lines.push(
@@ -183,5 +215,34 @@ export class CoachService {
       )
     }
     return lines.join('\n')
+  }
+
+  private sleepAverages(nights: Awaited<ReturnType<SleepService['listNights']>>): {
+    totalSleepMins: number | null
+    sleepEfficiencyPct: number | null
+    sleepOnsetLatencyMins: number | null
+  } {
+    return {
+      totalSleepMins: this.mean(nights.map((night) => night.metrics.totalSleepMins)),
+      sleepEfficiencyPct: this.mean(nights.map((night) => night.metrics.sleepEfficiencyPct)),
+      sleepOnsetLatencyMins: this.mean(nights.map((night) => night.metrics.sleepOnsetLatencyMins)),
+    }
+  }
+
+  private mean(values: Array<number | null>): number | null {
+    const present: number[] = []
+    for (const value of values) {
+      if (value !== null) {
+        present.push(value)
+      }
+    }
+    if (present.length === 0) {
+      return null
+    }
+    let sum = 0
+    for (const value of present) {
+      sum += value
+    }
+    return Math.round((sum / present.length) * 10) / 10
   }
 }
