@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cbtinsomnia-mobile-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cbtinsomnia
+      POSTGRES_PASSWORD: cbtinsomnia
+      POSTGRES_DB: cbtinsomnia_mobile
+    ports:
+      - '5433:5432'
+    volumes:
+      - cbtinsomnia_mobile_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cbtinsomnia -d cbtinsomnia_mobile']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: cbtinsomnia-mobile-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '4001:4001'
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 4001
+      DATABASE_URL: postgres://cbtinsomnia:cbtinsomnia@postgres:5432/cbtinsomnia_mobile
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-please-replace-32chars}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-2592000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      MOBILE_ORIGIN: ${MOBILE_ORIGIN:-*}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4001/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+volumes:
+  cbtinsomnia_mobile_pg:
