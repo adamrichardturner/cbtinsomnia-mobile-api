@@ -161,6 +161,16 @@ export function createRouter(deps: {
     }
   })
 
+  router.delete('/v1/me', requireAuth, async (req, res, next) => {
+    try {
+      const password = z.object({ password: z.string().min(1) }).parse(req.body).password
+      await deps.auth.deleteAccount(userId(req), password)
+      res.status(204).end()
+    } catch (error) {
+      next(error)
+    }
+  })
+
   router.get('/v1/sleep/summary', requireAuth, async (req, res, next) => {
     try {
       const days = z.coerce.number().int().min(1).max(90).optional().parse(req.query.days)

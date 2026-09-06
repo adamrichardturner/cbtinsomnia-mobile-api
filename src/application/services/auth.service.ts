@@ -236,6 +236,15 @@ export class AuthService {
     return this.requireUser(userId)
   }
 
+  async deleteAccount(userId: string, password: string): Promise<void> {
+    const row = await this.db<UserRow>('users').where({ id: userId }).first()
+    if (row === undefined) {
+      throw unauthorized()
+    }
+    await this.assertDeletionPassword(row, password)
+    await this.db('users').where({ id: userId }).delete()
+  }
+
   async updateUser(
     userId: string,
     patch: Partial<{
@@ -370,6 +379,19 @@ export class AuthService {
     })
   }
 
+  private async assertDeletionPassword(row: UserRow, password: string): Promise<void> {
+    if (row.password_hash === null) {
+      if (!emailConfirmationMatches(row.email, password)) {
+        throw unauthorized('Enter the email on this account to confirm deletion')
+      }
+      return
+    }
+    const ok = await verifyPassword(row.password_hash, password)
+    if (!ok) {
+      throw unauthorized('Password is incorrect')
+    }
+  }
+
   private async existingEmailConflict(existing: UserRow): Promise<HttpErrorLike> {
     const identities = await this.identityFlags(existing.id)
     const providers = listedOAuthProviders(identities)
@@ -464,6 +486,10 @@ function joinProviders(providers: OAuthProvider[]): string {
     return 'Apple'
   }
   return 'Google'
+}
+
+function emailConfirmationMatches(accountEmail: string, entered: string): boolean {
+  return accountEmail.trim().toLowerCase() === entered.trim().toLowerCase()
 }
 
 function normalizeOptionalPassword(password: string | undefined): string | undefined {
