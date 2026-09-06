@@ -48,6 +48,7 @@ const diarySchema = z.object({
   sleepMedicationDose: z.string().nullable().optional(),
   restfulnessRating: z.number().int().min(0).max(4).nullable().optional(),
   sleepQualityRating: z.number().int().min(0).max(4).nullable().optional(),
+  sleepThumb: z.enum(['up', 'down']).nullable().optional(),
   factors: z.array(z.string()).optional(),
   notes: z.string().max(10_000).nullable().optional(),
   notesHtml: z.string().max(20_000).nullable().optional(),
@@ -290,9 +291,7 @@ export function createRouter(deps: {
       const body = z
         .object({ threadId: z.string().optional(), content: z.string().min(1).max(4000) })
         .parse(req.body)
-      const thread = body.threadId
-        ? { id: body.threadId, title: 'Sleep coach' }
-        : await deps.coach.getOrCreateThread(userId(req))
+      const thread = await deps.coach.getOrCreateThread(userId(req))
       const messages = await deps.coach.sendMessage(userId(req), thread.id, body.content)
       res.json({ thread, messages })
     } catch (error) {

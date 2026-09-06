@@ -4,6 +4,7 @@ export type ConfirmationState = 'draft' | 'confirmed'
 export type NightSource = 'manual' | 'health' | 'merged'
 export type PlanStatus = 'draft' | 'active' | 'paused' | 'ended'
 export type HealthStage = 'inBed' | 'awake' | 'asleep' | 'core' | 'deep' | 'rem' | 'unknown'
+export type SleepThumb = 'up' | 'down'
 
 export interface HealthInterval {
   startedAt: string
@@ -43,6 +44,7 @@ export interface SleepDiaryFields {
   sleepMedicationDose: string | null
   restfulnessRating: number | null
   sleepQualityRating: number | null
+  sleepThumb: SleepThumb | null
   factors: string[]
   notes: string | null
   notesHtml: string | null

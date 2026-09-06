@@ -7,7 +7,9 @@ import type {
   NightMetrics,
   NightSource,
   SleepDiaryFields,
+  SleepThumb,
 } from '../../domain/sleep/types.js'
+import { isoDateOnly } from '../../shared/dates.js'
 import { notFound } from '../../shared/errors.js'
 
 export interface SleepNightRecord extends SleepDiaryFields {
@@ -46,6 +48,7 @@ interface NightRow {
   sleep_medication_dose: string | null
   restfulness_rating: number | null
   sleep_quality_rating: number | null
+  sleep_thumb: string | null
   factors: string[]
   notes: string | null
   notes_html: string | null
@@ -275,6 +278,7 @@ export class SleepService {
     return (
       fields.notes !== null ||
       fields.notesHtml !== null ||
+      fields.sleepThumb !== null ||
       fields.restfulnessRating !== null ||
       fields.sleepQualityRating !== null ||
       fields.sleepOnsetLatencyMins !== null
@@ -307,6 +311,7 @@ export class SleepService {
       sleepMedicationDose: patch.sleepMedicationDose ?? existing?.sleep_medication_dose ?? null,
       restfulnessRating: patch.restfulnessRating ?? existing?.restfulness_rating ?? null,
       sleepQualityRating: patch.sleepQualityRating ?? existing?.sleep_quality_rating ?? null,
+      sleepThumb: patch.sleepThumb ?? asSleepThumb(existing?.sleep_thumb) ?? null,
       factors: patch.factors ?? existing?.factors ?? [],
       notes: patch.notes ?? existing?.notes ?? null,
       notesHtml: patch.notesHtml ?? existing?.notes_html ?? null,
@@ -330,6 +335,7 @@ export class SleepService {
       sleep_medication_dose: fields.sleepMedicationDose,
       restfulness_rating: fields.restfulnessRating,
       sleep_quality_rating: fields.sleepQualityRating,
+      sleep_thumb: fields.sleepThumb,
       factors: JSON.stringify(fields.factors),
       notes: fields.notes,
       notes_html: fields.notesHtml,
@@ -340,7 +346,7 @@ export class SleepService {
     return {
       id: row.id,
       userId: row.user_id,
-      nightDate: String(row.night_date).slice(0, 10),
+      nightDate: isoDateOnly(row.night_date),
       timeZone: row.time_zone,
       source: row.source,
       confirmationState: row.confirmation_state,
@@ -359,6 +365,7 @@ export class SleepService {
       sleepMedicationDose: row.sleep_medication_dose,
       restfulnessRating: row.restfulness_rating,
       sleepQualityRating: row.sleep_quality_rating,
+      sleepThumb: asSleepThumb(row.sleep_thumb),
       factors: row.factors ?? [],
       notes: row.notes,
       notesHtml: row.notes_html,
@@ -370,4 +377,11 @@ export class SleepService {
       updatedAt: new Date(row.updated_at).toISOString(),
     }
   }
+}
+
+function asSleepThumb(value: string | null | undefined): SleepThumb | null {
+  if (value === 'up' || value === 'down') {
+    return value
+  }
+  return null
 }

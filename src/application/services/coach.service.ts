@@ -8,7 +8,9 @@ import {
   OFF_TOPIC_REPLY,
   SYSTEM_PROMPT,
 } from '../../domain/chat/guardrails.js'
+import { formatSleepContext } from '../../domain/chat/sleep-context.js'
 import { completeChat } from '../../infrastructure/openai/client.js'
+import { isoDateOnly } from '../../shared/dates.js'
 import { notFound } from '../../shared/errors.js'
 import type { PlanService } from './plan.service.js'
 import type { SleepService } from './sleep.service.js'
@@ -158,7 +160,7 @@ export class CoachService {
     }
     return {
       id: row.id,
-      nightDate: String(row.night_date).slice(0, 10),
+      nightDate: isoDateOnly(row.night_date),
       headline: row.headline,
       body: row.body,
       createdAt: new Date(row.created_at).toISOString(),
@@ -188,61 +190,10 @@ export class CoachService {
   ): Promise<string> {
     const nights = nightsOverride ?? (await this.sleep.listNights(userId, 14))
     const alignment = await this.plans.alignment(userId)
-    const plan = alignment.plan
-    const averages = this.sleepAverages(nights)
-    const lines = [
-      'User sleep context (facts only):',
-      `Nights in this review: ${nights.length}`,
-      `Average total sleep (mins): ${averages.totalSleepMins}`,
-      `Average sleep efficiency: ${averages.sleepEfficiencyPct}`,
-      `Average SOL (mins): ${averages.sleepOnsetLatencyMins}`,
-    ]
-    const preview = nights.slice(0, 14)
-    for (const night of preview) {
-      lines.push(
-        `Night ${night.nightDate}: TST ${night.metrics.totalSleepMins}, TIB ${night.metrics.timeInBedMins}, SE ${night.metrics.sleepEfficiencyPct}, SOL ${night.metrics.sleepOnsetLatencyMins}, WASO ${night.metrics.wasoMins}, source ${night.source}`,
-      )
-      if (night.notes !== null) {
-        lines.push(`Diary note ${night.nightDate}: ${night.notes.slice(0, 280)}`)
-      }
-    }
-    if (nights.length === 0) {
-      lines.push('No nights recorded.')
-    }
-    if (plan !== null) {
-      lines.push(
-        `Sleep plan: rise ${plan.risingTime}, threshold ${plan.thresholdTime}, window ${plan.windowMinutes} mins, status ${plan.status}`,
-      )
-    }
-    return lines.join('\n')
-  }
-
-  private sleepAverages(nights: Awaited<ReturnType<SleepService['listNights']>>): {
-    totalSleepMins: number | null
-    sleepEfficiencyPct: number | null
-    sleepOnsetLatencyMins: number | null
-  } {
-    return {
-      totalSleepMins: this.mean(nights.map((night) => night.metrics.totalSleepMins)),
-      sleepEfficiencyPct: this.mean(nights.map((night) => night.metrics.sleepEfficiencyPct)),
-      sleepOnsetLatencyMins: this.mean(nights.map((night) => night.metrics.sleepOnsetLatencyMins)),
-    }
-  }
-
-  private mean(values: Array<number | null>): number | null {
-    const present: number[] = []
-    for (const value of values) {
-      if (value !== null) {
-        present.push(value)
-      }
-    }
-    if (present.length === 0) {
-      return null
-    }
-    let sum = 0
-    for (const value of present) {
-      sum += value
-    }
-    return Math.round((sum / present.length) * 10) / 10
+    return formatSleepContext({
+      nights,
+      plan: alignment.plan,
+      alignmentNights: alignment.nights,
+    })
   }
 }

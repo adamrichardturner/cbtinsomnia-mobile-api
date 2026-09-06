@@ -15,7 +15,7 @@ export async function completeChat(
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
 ): Promise<string> {
   if (client === null) {
-    return localFallback(messages)
+    return localFallback(system, messages)
   }
 
   const response = await client.chat.completions.create({
@@ -24,13 +24,20 @@ export async function completeChat(
     messages: [{ role: 'system', content: system }, ...messages],
   })
 
-  return response.choices[0]?.message.content?.trim() ?? localFallback(messages)
+  return response.choices[0]?.message.content?.trim() ?? localFallback(system, messages)
 }
 
-function localFallback(messages: { role: string; content: string }[]): string {
+function localFallback(system: string, messages: { role: string; content: string }[]): string {
   const last = messages[messages.length - 1]?.content ?? ''
-  if (last.length === 0) {
-    return 'I can help with your sleep plan once the OpenAI key is configured. Until then: keep a regular rise time, and record last night in the diary.'
+  const hasNights = system.includes('Most recent night:')
+  if (last.length === 0 && hasNights) {
+    return 'I can coach from the nights already in your diary. Keep a regular rise time, and go to bed only when sleepy.'
   }
-  return 'I can only help with sleep and CBT-I. Keep last night’s diary honest, protect your rise time, and go to bed only when sleepy. Add an OpenAI key on the server for a fuller coach reply.'
+  if (last.length === 0) {
+    return 'I can help with your sleep plan once you log a night in the diary or sync Health. Until then: keep a regular rise time.'
+  }
+  if (hasNights) {
+    return 'I can only help with sleep and CBT-I. Use last night’s diary as the ground truth: protect your rise time, go to bed only when sleepy, and keep the window honest.'
+  }
+  return 'I can only help with sleep and CBT-I. Log last night in the diary or sync Health so I can coach from your actual nights.'
 }
