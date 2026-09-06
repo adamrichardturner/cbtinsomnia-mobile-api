@@ -106,8 +106,10 @@ describe('formatSleepContext', () => {
     })
 
     expect(text).toContain('Nights in this review: 2')
-    expect(text).toContain('Average total sleep (mins): 380')
-    expect(text).toContain('Average WASO (mins): 30')
+    expect(text).toContain('Average sleep per night: 6h 20m')
+    expect(text).toContain('Average time in bed per night: 7h 30m')
+    expect(text).toContain('Average WASO per night: 30m')
+    expect(text).toContain('Never add minutes across nights')
     expect(text).toContain('Most recent night: 2026-09-05')
     expect(text).toContain('Night 2026-09-04, TST 360')
     expect(text).toContain('Sleep plan: none active.')

@@ -1,7 +1,8 @@
 import type { HealthInterval, NightMetrics } from './types.js'
 
-export const METRICS_VERSION = '2026.1-mobile'
+export const METRICS_VERSION = '2026.2-mobile'
 const MINUTES_PER_DAY = 1_440
+const SESSION_GAP_MINS = 180
 
 export interface MetricsInput {
   nightDate: string
@@ -114,51 +115,32 @@ function metricsFromHealth(intervals: HealthInterval[]): NightMetrics | null {
     return null
   }
 
-  const sorted = [...intervals].sort((a, b) => a.startedAt.localeCompare(b.startedAt))
-  const first = sorted[0]
-  const last = sorted[sorted.length - 1]
-  if (first === undefined || last === undefined) {
+  const session = primarySleepSession(intervals)
+  if (session.length === 0) {
     return null
   }
 
-  let asleep = 0
-  let awake = 0
-  let inBed = 0
-  let core = 0
-  let deep = 0
-  let rem = 0
-  let firstAsleepAt: string | null = null
-  let lastAsleepEnd: string | null = null
-
-  for (const interval of sorted) {
-    if (interval.stage === 'inBed') {
-      inBed += interval.durationMins
-      continue
-    }
-    if (interval.stage === 'awake') {
-      awake += interval.durationMins
-      continue
-    }
-    if (isAsleepStage(interval.stage)) {
-      asleep += interval.durationMins
-      firstAsleepAt = firstAsleepAt ?? interval.startedAt
-      lastAsleepEnd = interval.endedAt
-      if (interval.stage === 'core') {
-        core += interval.durationMins
-      }
-      if (interval.stage === 'deep') {
-        deep += interval.durationMins
-      }
-      if (interval.stage === 'rem') {
-        rem += interval.durationMins
-      }
-    }
+  const inBedIntervals = intervalsWithStage(session, 'inBed')
+  const awakeIntervals = intervalsWithStage(session, 'awake')
+  const asleepIntervals = session.filter((interval) => isAsleepStage(interval.stage))
+  const sessionStart = earliestStart(inBedIntervals) ?? earliestStart(session)
+  const sessionEnd = latestEnd(inBedIntervals) ?? latestEnd(session)
+  if (sessionStart === null || sessionEnd === null) {
+    return null
   }
 
-  const sessionStart = first.startedAt
-  const sessionEnd = last.endedAt
+  const inBedUnion = unionMinutes(inBedIntervals)
   const timeInBedMins =
-    inBed > 0 ? inBed : Math.max(Math.round(msBetween(sessionStart, sessionEnd) / 60_000), 0)
+    inBedUnion > 0
+      ? inBedUnion
+      : Math.max(Math.round(msBetween(sessionStart, sessionEnd) / 60_000), 0)
+  const asleep = unionMinutes(asleepIntervals)
+  const awake = unionMinutes(awakeIntervals)
+  const core = unionMinutes(intervalsWithStage(session, 'core'))
+  const deep = unionMinutes(intervalsWithStage(session, 'deep'))
+  const rem = unionMinutes(intervalsWithStage(session, 'rem'))
+  const firstAsleepAt = earliestStart(asleepIntervals)
+  const lastAsleepEnd = latestEnd(asleepIntervals)
   const sol =
     firstAsleepAt === null
       ? null
@@ -182,6 +164,136 @@ function metricsFromHealth(intervals: HealthInterval[]): NightMetrics | null {
     remMins: rem > 0 ? rem : null,
     metricsVersion: METRICS_VERSION,
   }
+}
+
+function primarySleepSession(intervals: HealthInterval[]): HealthInterval[] {
+  const clusters = clusterSessions(intervals)
+  if (clusters.length === 0) {
+    return []
+  }
+
+  let best = clusters[0] ?? []
+  let bestSleep = unionMinutes(best.filter((interval) => isAsleepStage(interval.stage)))
+  let bestSpan = sessionSpanMins(best)
+
+  for (let index = 1; index < clusters.length; index += 1) {
+    const cluster = clusters[index]
+    if (cluster === undefined) {
+      continue
+    }
+    const sleep = unionMinutes(cluster.filter((interval) => isAsleepStage(interval.stage)))
+    const span = sessionSpanMins(cluster)
+    if (sleep > bestSleep || (sleep === bestSleep && span > bestSpan)) {
+      best = cluster
+      bestSleep = sleep
+      bestSpan = span
+    }
+  }
+
+  return best
+}
+
+function clusterSessions(intervals: HealthInterval[]): HealthInterval[][] {
+  const sorted = [...intervals].sort((left, right) => left.startedAt.localeCompare(right.startedAt))
+  const clusters: HealthInterval[][] = []
+  let current: HealthInterval[] = []
+
+  for (const interval of sorted) {
+    const previous = current[current.length - 1]
+    if (previous === undefined) {
+      current = [interval]
+      continue
+    }
+    const gapMins = msBetween(previous.endedAt, interval.startedAt) / 60_000
+    if (gapMins > SESSION_GAP_MINS) {
+      clusters.push(current)
+      current = [interval]
+      continue
+    }
+    current.push(interval)
+  }
+
+  if (current.length > 0) {
+    clusters.push(current)
+  }
+  return clusters
+}
+
+function intervalsWithStage(
+  intervals: HealthInterval[],
+  stage: HealthInterval['stage'],
+): HealthInterval[] {
+  const matched: HealthInterval[] = []
+  for (const interval of intervals) {
+    if (interval.stage === stage) {
+      matched.push(interval)
+    }
+  }
+  return matched
+}
+
+function unionMinutes(intervals: HealthInterval[]): number {
+  if (intervals.length === 0) {
+    return 0
+  }
+
+  const ranges = [...intervals].sort((left, right) => left.startedAt.localeCompare(right.startedAt))
+  const first = ranges[0]
+  if (first === undefined) {
+    return 0
+  }
+
+  let totalMs = 0
+  let rangeStart = first.startedAt
+  let rangeEnd = first.endedAt
+
+  for (let index = 1; index < ranges.length; index += 1) {
+    const next = ranges[index]
+    if (next === undefined) {
+      continue
+    }
+    if (next.startedAt <= rangeEnd) {
+      if (next.endedAt > rangeEnd) {
+        rangeEnd = next.endedAt
+      }
+      continue
+    }
+    totalMs += msBetween(rangeStart, rangeEnd)
+    rangeStart = next.startedAt
+    rangeEnd = next.endedAt
+  }
+
+  totalMs += msBetween(rangeStart, rangeEnd)
+  return Math.max(Math.round(totalMs / 60_000), 0)
+}
+
+function earliestStart(intervals: HealthInterval[]): string | null {
+  let start: string | null = null
+  for (const interval of intervals) {
+    if (start === null || interval.startedAt < start) {
+      start = interval.startedAt
+    }
+  }
+  return start
+}
+
+function latestEnd(intervals: HealthInterval[]): string | null {
+  let end: string | null = null
+  for (const interval of intervals) {
+    if (end === null || interval.endedAt > end) {
+      end = interval.endedAt
+    }
+  }
+  return end
+}
+
+function sessionSpanMins(intervals: HealthInterval[]): number {
+  const start = earliestStart(intervals)
+  const end = latestEnd(intervals)
+  if (start === null || end === null) {
+    return 0
+  }
+  return Math.max(Math.round(msBetween(start, end) / 60_000), 0)
 }
 
 function mergeManualOverrides(health: NightMetrics, input: MetricsInput): NightMetrics {

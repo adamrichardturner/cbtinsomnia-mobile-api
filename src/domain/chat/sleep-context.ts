@@ -56,13 +56,21 @@ export function formatSleepContext(input: {
     return lines.join('\n')
   }
 
-  const averages = sleepAverages(input.nights)
-  lines.push(`Nights in this review: ${input.nights.length}`)
-  lines.push(`Average total sleep (mins): ${averages.totalSleepMins}`)
-  lines.push(`Average time in bed (mins): ${averages.timeInBedMins}`)
-  lines.push(`Average sleep efficiency: ${averages.sleepEfficiencyPct}`)
-  lines.push(`Average SOL (mins): ${averages.sleepOnsetLatencyMins}`)
-  lines.push(`Average WASO (mins): ${averages.wasoMins}`)
+  const averages = averageNightMetrics(input.nights)
+  lines.push(`Nights in this review: ${averages.nightsCounted}`)
+  lines.push(
+    'Per-night averages for this review. Quote these as a typical night. Never add minutes across nights.',
+  )
+  lines.push(`Average sleep per night: ${formatMinsLabel(averages.totalSleepMins)}`)
+  lines.push(`Average time in bed per night: ${formatMinsLabel(averages.timeInBedMins)}`)
+  lines.push(`Average sleep efficiency per night: ${formatPctLabel(averages.sleepEfficiencyPct)}`)
+  lines.push(
+    `Average time to fall asleep per night: ${formatMinsLabel(averages.sleepOnsetLatencyMins)}`,
+  )
+  lines.push(`Average WASO per night: ${formatMinsLabel(averages.wasoMins)}`)
+  lines.push(`Average REM per night: ${formatMinsLabel(averages.remMins)}`)
+  lines.push(`Average deep sleep per night: ${formatMinsLabel(averages.deepMins)}`)
+  lines.push(`Average core sleep per night: ${formatMinsLabel(averages.coreMins)}`)
 
   const latest = input.nights[0]
   if (latest !== undefined) {
@@ -198,20 +206,54 @@ function triState(value: boolean | null): string {
   return 'no'
 }
 
-function sleepAverages(nights: SleepContextNight[]): {
+export interface PeriodAverages {
   totalSleepMins: number | null
   timeInBedMins: number | null
   sleepEfficiencyPct: number | null
   sleepOnsetLatencyMins: number | null
   wasoMins: number | null
-} {
+  coreMins: number | null
+  deepMins: number | null
+  remMins: number | null
+  nightsCounted: number
+}
+
+export function averageNightMetrics(
+  nights: Array<{ metrics: SleepContextMetrics }>,
+): PeriodAverages {
   return {
     totalSleepMins: mean(nights.map((night) => night.metrics.totalSleepMins)),
     timeInBedMins: mean(nights.map((night) => night.metrics.timeInBedMins)),
     sleepEfficiencyPct: mean(nights.map((night) => night.metrics.sleepEfficiencyPct)),
     sleepOnsetLatencyMins: mean(nights.map((night) => night.metrics.sleepOnsetLatencyMins)),
     wasoMins: mean(nights.map((night) => night.metrics.wasoMins)),
+    coreMins: mean(nights.map((night) => night.metrics.coreMins)),
+    deepMins: mean(nights.map((night) => night.metrics.deepMins)),
+    remMins: mean(nights.map((night) => night.metrics.remMins)),
+    nightsCounted: nights.length,
   }
+}
+
+function formatMinsLabel(value: number | null): string {
+  if (value === null) {
+    return 'unknown'
+  }
+  const hours = Math.floor(value / 60)
+  const mins = Math.round(value % 60)
+  if (hours === 0) {
+    return `${mins}m`
+  }
+  if (mins === 0) {
+    return `${hours}h`
+  }
+  return `${hours}h ${mins}m`
+}
+
+function formatPctLabel(value: number | null): string {
+  if (value === null) {
+    return 'unknown'
+  }
+  return `${Math.round(value)}%`
 }
 
 function mean(values: Array<number | null>): number | null {

@@ -8,7 +8,11 @@ import {
   OFF_TOPIC_REPLY,
   SYSTEM_PROMPT,
 } from '../../domain/chat/guardrails.js'
-import { formatSleepContext } from '../../domain/chat/sleep-context.js'
+import {
+  averageNightMetrics,
+  formatSleepContext,
+  type PeriodAverages,
+} from '../../domain/chat/sleep-context.js'
 import { completeChat } from '../../infrastructure/openai/client.js'
 import { isoDateOnly } from '../../shared/dates.js'
 import { notFound } from '../../shared/errors.js'
@@ -31,6 +35,7 @@ export interface SleepAnalysisResult {
   headline: string
   body: string
   period: AnalysisPeriod
+  averages: PeriodAverages
 }
 
 export class CoachService {
@@ -124,6 +129,8 @@ export class CoachService {
       throw notFound('No sleep recorded for that night yet.')
     }
 
+    const reviewNights = input.period === 'night' ? [target] : nights
+    const averages = averageNightMetrics(reviewNights)
     const contextNights = input.period === 'night' ? nights.slice(0, 7) : nights
     const context = await this.buildContext(userId, contextNights)
     const body = await completeChat(this.openai, this.model, `${ANALYSIS_PROMPT}\n\n${context}`, [
@@ -132,16 +139,18 @@ export class CoachService {
         content: analysisUserPrompt(input),
       },
     ])
-    const headline = body.split('\n').find((line) => line.trim().length > 0) ?? 'Sleep in context'
+    const rawHeadline =
+      body.split('\n').find((line) => line.trim().length > 0) ?? 'Sleep in context'
+    const headline = cleanHeadline(rawHeadline)
     const id = uuid()
     await this.db('sleep_analyses').insert({
       id,
       user_id: userId,
       night_date: target.nightDate,
-      headline: headline.replace(/^#+\s*/, '').slice(0, 180),
+      headline: headline.slice(0, 180),
       body,
     })
-    return { id, nightDate: target.nightDate, headline, body, period: input.period }
+    return { id, nightDate: target.nightDate, headline, body, period: input.period, averages }
   }
 
   async latestAnalysis(userId: string): Promise<{
@@ -196,4 +205,13 @@ export class CoachService {
       alignmentNights: alignment.nights,
     })
   }
+}
+
+function cleanHeadline(line: string): string {
+  const withoutHash = line.replace(/^#+\s*/, '').trim()
+  const wrapped = /^\*\*(.+)\*\*$/.exec(withoutHash)
+  if (wrapped !== null) {
+    return (wrapped[1] ?? withoutHash).replace(/\*\*/g, '').trim()
+  }
+  return withoutHash.replace(/\*\*/g, '').trim()
 }

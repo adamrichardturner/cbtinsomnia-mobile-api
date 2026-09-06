@@ -217,11 +217,16 @@ export class SleepService {
       sleepEfficiencyPct: number | null
       timeInBedMins: number | null
       sleepOnsetLatencyMins: number | null
+      wasoMins: number | null
+      coreMins: number | null
+      deepMins: number | null
+      remMins: number | null
       nightsCounted: number
     }
     previousAverages: {
       totalSleepMins: number | null
       sleepEfficiencyPct: number | null
+      timeInBedMins: number | null
       nightsCounted: number
     }
   }> {
@@ -236,6 +241,7 @@ export class SleepService {
       previousAverages: {
         totalSleepMins: this.mean(previous.map((night) => night.metrics.totalSleepMins)),
         sleepEfficiencyPct: this.mean(previous.map((night) => night.metrics.sleepEfficiencyPct)),
+        timeInBedMins: this.mean(previous.map((night) => night.metrics.timeInBedMins)),
         nightsCounted: previous.length,
       },
     }
@@ -246,6 +252,10 @@ export class SleepService {
     sleepEfficiencyPct: number | null
     timeInBedMins: number | null
     sleepOnsetLatencyMins: number | null
+    wasoMins: number | null
+    coreMins: number | null
+    deepMins: number | null
+    remMins: number | null
     nightsCounted: number
   } {
     return {
@@ -253,6 +263,10 @@ export class SleepService {
       sleepEfficiencyPct: this.mean(nights.map((night) => night.metrics.sleepEfficiencyPct)),
       timeInBedMins: this.mean(nights.map((night) => night.metrics.timeInBedMins)),
       sleepOnsetLatencyMins: this.mean(nights.map((night) => night.metrics.sleepOnsetLatencyMins)),
+      wasoMins: this.mean(nights.map((night) => night.metrics.wasoMins)),
+      coreMins: this.mean(nights.map((night) => night.metrics.coreMins)),
+      deepMins: this.mean(nights.map((night) => night.metrics.deepMins)),
+      remMins: this.mean(nights.map((night) => night.metrics.remMins)),
       nightsCounted: nights.length,
     }
   }
@@ -370,7 +384,19 @@ export class SleepService {
       notes: row.notes,
       notesHtml: row.notes_html,
       healthIntervals: row.health_intervals ?? [],
-      metrics: row.metrics,
+      metrics: computeNightMetrics({
+        nightDate: isoDateOnly(row.night_date),
+        timeZone: row.time_zone,
+        bedTime: row.bed_time,
+        lightsOutTime: row.lights_out_time,
+        sleepOnsetLatencyMins: row.sleep_onset_latency_mins,
+        wasoMins: row.waso_mins,
+        finalWakeTime: row.final_wake_time,
+        outOfBedTime: row.out_of_bed_time,
+        totalSleepMinsOverride: row.total_sleep_mins,
+        earlyMorningAwakeMins: row.early_morning_awake_mins,
+        healthIntervals: row.health_intervals ?? [],
+      }),
       healthSyncedAt:
         row.health_synced_at === null ? null : new Date(row.health_synced_at).toISOString(),
       createdAt: new Date(row.created_at).toISOString(),
