@@ -9,7 +9,13 @@ export function errorHandler(
   _next: NextFunction,
 ): void {
   if (error instanceof HttpError) {
-    res.status(error.status).json({ error: { code: error.code, message: error.message } })
+    res.status(error.status).json({
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.details ?? {}),
+      },
+    })
     return
   }
   if (error instanceof ZodError) {

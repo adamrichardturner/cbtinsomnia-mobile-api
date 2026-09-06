@@ -21,6 +21,15 @@ const loginSchema = z.object({
   password: z.string().min(1),
 })
 
+const oauthSchema = z.object({
+  provider: z.enum(['google', 'apple']),
+  idToken: z.string().min(1),
+  nonce: z.string().min(1).optional(),
+  displayName: z.string().min(1).max(80).optional(),
+  timeZone: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+})
+
 const diarySchema = z.object({
   nightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timeZone: z.string().min(1),
@@ -93,6 +102,15 @@ export function createRouter(deps: {
     try {
       const body = loginSchema.parse(req.body)
       res.json(await deps.auth.login(body.email, body.password))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/v1/auth/oauth', async (req, res, next) => {
+    try {
+      const body = oauthSchema.parse(req.body)
+      res.json(await deps.auth.oauth(body))
     } catch (error) {
       next(error)
     }

@@ -11,6 +11,14 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_MODEL: z.string().min(1).default('gpt-4o'),
   MOBILE_ORIGIN: z.string().min(1).default('*'),
+  APPLE_CLIENT_IDS: z
+    .string()
+    .default('com.cbtinsomnia.mobile')
+    .transform((value) => splitCsv(value)),
+  GOOGLE_CLIENT_IDS: z
+    .string()
+    .optional()
+    .transform((value) => splitCsv(value)),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -27,4 +35,19 @@ export function loadEnv(raw: NodeJS.ProcessEnv = process.env): Env {
 
 export function resetEnvCache(): void {
   cached = undefined
+}
+
+function splitCsv(value: string | undefined): string[] {
+  if (value === undefined) {
+    return []
+  }
+  const ids: string[] = []
+  const parts = value.split(',')
+  for (const part of parts) {
+    const id = part.trim()
+    if (id.length > 0) {
+      ids.push(id)
+    }
+  }
+  return ids
 }

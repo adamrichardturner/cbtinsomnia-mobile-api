@@ -42,6 +42,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       MOBILE_ORIGIN: ${MOBILE_ORIGIN:-*}
+      APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS:-com.cbtinsomnia.mobile}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-}
     healthcheck:
       test:
         [

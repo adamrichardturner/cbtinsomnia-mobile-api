@@ -10,6 +10,7 @@ import type { PlanService } from './application/services/plan.service.js'
 import type { SleepService } from './application/services/sleep.service.js'
 import { errorHandler } from './interfaces/http/middleware/error-handler.js'
 import { createRouter } from './interfaces/http/routes/index.js'
+import { notFound } from './shared/errors.js'
 
 export function createApp(deps: {
   env: Env
@@ -33,6 +34,9 @@ export function createApp(deps: {
     next()
   })
   app.use(createRouter(deps))
+  app.use((req, _res, next) => {
+    next(notFound(`Cannot ${req.method} ${req.path}`))
+  })
   app.use(errorHandler)
   return app
 }
